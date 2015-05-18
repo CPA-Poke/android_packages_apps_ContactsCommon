@@ -47,6 +47,7 @@ import com.android.contacts.common.util.ContactLoaderUtils;
 import com.android.contacts.common.util.DataStatus;
 import com.android.contacts.common.util.UriUtils;
 import com.android.contacts.common.model.dataitem.DataItem;
+import com.android.contacts.common.model.dataitem.GroupMembershipDataItem;
 import com.android.contacts.common.model.dataitem.PhoneDataItem;
 import com.android.contacts.common.model.dataitem.PhotoDataItem;
 import com.google.common.collect.ImmutableList;
@@ -63,9 +64,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -773,6 +776,34 @@ public class ContactLoader extends AsyncTaskLoader<Contact> {
         }
     }
 
+    static private class AccountKey {
+        private final String mAccountName;
+        private final String mAccountType;
+        private final String mDataSet;
+
+        public AccountKey(String accountName, String accountType, String dataSet) {
+            mAccountName = accountName;
+            mAccountType = accountType;
+            mDataSet = dataSet;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(mAccountName, mAccountType, mDataSet);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (!(obj instanceof AccountKey)) {
+                return false;
+            }
+            final AccountKey other = (AccountKey) obj;
+            return Objects.equals(mAccountName, other.mAccountName)
+                && Objects.equals(mAccountType, other.mAccountType)
+                && Objects.equals(mDataSet, other.mDataSet);
+        }
+    }
+
     /**
      * Loads groups meta-data for all groups associated with all constituent raw contacts'
      * accounts.
@@ -780,11 +811,15 @@ public class ContactLoader extends AsyncTaskLoader<Contact> {
     private void loadGroupMetaData(Contact result) {
         StringBuilder selection = new StringBuilder();
         ArrayList<String> selectionArgs = new ArrayList<String>();
+        final HashSet<AccountKey> accountsSeen = new HashSet<>();
         for (RawContact rawContact : result.getRawContacts()) {
             final String accountName = rawContact.getAccountName();
             final String accountType = rawContact.getAccountTypeString();
             final String dataSet = rawContact.getDataSet();
-            if (accountName != null && accountType != null) {
+            final AccountKey accountKey = new AccountKey(accountName, accountType, dataSet);
+            if (accountName != null && accountType != null &&
+                    !accountsSeen.contains(accountKey)) {
+                accountsSeen.add(accountKey);
                 if (selection.length() != 0) {
                     selection.append(" OR ");
                 }
@@ -830,7 +865,30 @@ public class ContactLoader extends AsyncTaskLoader<Contact> {
                 cursor.close();
             }
         }
-        result.setGroupMetaData(groupListBuilder.build());
+
+        final ImmutableList<GroupMetaData> metaDataList = groupListBuilder.build();
+        result.setGroupMetaData(metaDataList);
+
+        for (RawContact rawContact : result.getRawContacts()) {
+            for (DataItem dataItem : rawContact.getDataItems()) {
+                if (!(dataItem instanceof GroupMembershipDataItem)) {
+                    continue;
+                }
+
+                final GroupMembershipDataItem groupItem = (GroupMembershipDataItem) dataItem;
+                final Long groupId = groupItem.getGroupRowId();
+                if (groupId == null) {
+                    continue;
+                }
+
+                for (GroupMetaData groupData : metaDataList) {
+                    if (groupData.getGroupId() == groupId) {
+                        groupItem.setGroupMetaData(groupData);
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     /**

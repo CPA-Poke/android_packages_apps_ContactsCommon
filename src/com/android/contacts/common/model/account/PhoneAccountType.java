@@ -49,6 +49,7 @@ import com.google.android.collect.Lists;
 public class PhoneAccountType extends BaseAccountType{
     private static final String TAG = "PhoneAccountType";
 
+    public static final String ACCOUNT_NAME = SimContactsConstants.PHONE_NAME;
     public static final String ACCOUNT_TYPE = SimContactsConstants.ACCOUNT_TYPE_PHONE;
     public static final int FLAGS_PERSON_NAME = EditorInfo.TYPE_CLASS_TEXT
             | EditorInfo.TYPE_TEXT_FLAG_CAP_WORDS | EditorInfo.TYPE_TEXT_VARIATION_PERSON_NAME;
@@ -73,7 +74,7 @@ public class PhoneAccountType extends BaseAccountType{
             addDataKindPhoto(context);
             addDataKindNote(context);
             addDataKindWebsite(context);
-            //addDataKindGroupMembership(context);
+            addDataKindGroupMembership(context);
             if (context.getResources().getBoolean(
                     com.android.internal.R.bool.config_built_in_sip_phone)) {
                 addDataKindSipAddress(context);

@@ -23,8 +23,11 @@ import android.os.Bundle;
 import android.util.Log;
 
 import com.android.contacts.common.R;
+import com.android.contacts.common.SimContactsConstants;
 import com.android.contacts.common.model.AccountTypeManager;
+import com.android.contacts.common.model.account.AccountType;
 import com.android.contacts.common.model.account.AccountWithDataSet;
+import com.android.contacts.common.model.account.PhoneAccountType;
 import com.android.contacts.common.util.AccountSelectionUtil;
 
 import java.util.List;
@@ -52,29 +55,24 @@ public class SelectAccountActivity extends Activity {
     protected void onCreate(Bundle bundle) {
         super.onCreate(bundle);
 
-        // There's three possibilities:
-        // - more than one accounts -> ask the user
-        // - just one account -> use the account without asking the user
+        // There are two possibilities:
+        // - one or more than one accounts -> ask the user (user can select phone-local also)
         // - no account -> use phone-local storage without asking the user
         final int resId = R.string.import_from_sdcard;
         final AccountTypeManager accountTypes = AccountTypeManager.getInstance(this);
         final List<AccountWithDataSet> accountList = accountTypes.getAccounts(true);
         if (accountList.size() == 0) {
-            Log.w(LOG_TAG, "Account does not exist");
-            finish();
-            return;
-        } else if (accountList.size() == 1) {
-            final AccountWithDataSet account = accountList.get(0);
-            final Intent intent = new Intent();
-            intent.putExtra(ACCOUNT_NAME, account.name);
-            intent.putExtra(ACCOUNT_TYPE, account.type);
-            intent.putExtra(DATA_SET, account.dataSet);
-            setResult(RESULT_OK, intent);
+            Log.w(LOG_TAG, "Select local storage account");
             finish();
             return;
         }
 
         Log.i(LOG_TAG, "The number of available accounts: " + accountList.size());
+
+        // Add the local storage account to allow user to store its contacts in the phone
+        AccountWithDataSet localAccount = new AccountWithDataSet(
+                PhoneAccountType.ACCOUNT_NAME, PhoneAccountType.ACCOUNT_TYPE, null);
+        accountList.add(0, localAccount);
 
         // Multiple accounts. Let users to select one.
         mAccountSelectionListener =
@@ -83,12 +81,15 @@ public class SelectAccountActivity extends Activity {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         dialog.dismiss();
-                        final AccountWithDataSet account = mAccountList.get(which);
-                        final Intent intent = new Intent();
-                        intent.putExtra(ACCOUNT_NAME, account.name);
-                        intent.putExtra(ACCOUNT_TYPE, account.type);
-                        intent.putExtra(DATA_SET, account.dataSet);
-                        setResult(RESULT_OK, intent);
+                        // Position 0 contains the phone-local account
+                        if (which > 0) {
+                            final AccountWithDataSet account = mAccountList.get(which);
+                            final Intent intent = new Intent();
+                            intent.putExtra(ACCOUNT_NAME, account.name);
+                            intent.putExtra(ACCOUNT_TYPE, account.type);
+                            intent.putExtra(DATA_SET, account.dataSet);
+                            setResult(RESULT_OK, intent);
+                        }
                         finish();
                     }
                 };

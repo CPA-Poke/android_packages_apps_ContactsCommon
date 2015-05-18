@@ -27,6 +27,7 @@ import android.provider.ContactsContract;
 import android.provider.Settings;
 import android.provider.Settings.SettingNotFoundException;
 
+import android.text.TextUtils;
 import com.android.contacts.common.R;
 
 /**
@@ -51,12 +52,17 @@ public final class ContactsPreferences implements OnSharedPreferenceChangeListen
      */
     public static final int SORT_ORDER_PRIMARY = 1;
 
-    public static final String SORT_ORDER_KEY = "android.contacts.SORT_ORDER";
-
     /**
      * The value for the SORT_ORDER key corresponding to sort by family name first.
      */
     public static final int SORT_ORDER_ALTERNATIVE = 2;
+
+    public static final String SORT_ORDER_KEY = "android.contacts.SORT_ORDER";
+
+    /**
+     * The values of SIMs serial numbers that have been imported
+     */
+    public static final String IMPORTED_SIMS_SNS = "android.contacts.IMPORTED_SIMS";
 
     public static final String PREF_DISPLAY_ONLY_PHONES = "only_phones";
     public static final boolean PREF_DISPLAY_ONLY_PHONES_DEFAULT = false;
@@ -102,6 +108,28 @@ public final class ContactsPreferences implements OnSharedPreferenceChangeListen
         mSortOrder = sortOrder;
         final Editor editor = mPreferences.edit();
         editor.putInt(SORT_ORDER_KEY, sortOrder);
+        editor.commit();
+    }
+
+    public String[] getImportedSims() {
+        String imported = mPreferences.getString(IMPORTED_SIMS_SNS, "");
+        if (!TextUtils.isEmpty(imported)) {
+            return imported.split("\\|");
+        } else {
+            return new String[0];
+        }
+    }
+
+    public void addImportedSims(String simSN) {
+        String imported = mPreferences.getString(IMPORTED_SIMS_SNS, "");
+        if (!TextUtils.isEmpty(imported)) {
+            imported += "|" + simSN;
+        } else {
+            imported = simSN;
+        }
+
+        final Editor editor = mPreferences.edit();
+        editor.putString(IMPORTED_SIMS_SNS, imported);
         editor.commit();
     }
 

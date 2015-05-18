@@ -39,6 +39,7 @@ import android.preference.PreferenceManager;
 import android.provider.ContactsContract;
 import android.provider.ContactsContract.Groups;
 import android.provider.ContactsContract.Settings;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.ContextMenu;
 import android.view.LayoutInflater;
@@ -54,11 +55,14 @@ import android.widget.ExpandableListView.ExpandableListContextMenuInfo;
 import android.widget.TextView;
 
 import com.android.contacts.common.R;
+import com.android.contacts.common.MoreContactUtils;
 import com.android.contacts.common.model.AccountTypeManager;
 import com.android.contacts.common.model.ValuesDelta;
 import com.android.contacts.common.model.account.AccountType;
 import com.android.contacts.common.model.account.AccountWithDataSet;
 import com.android.contacts.common.model.account.GoogleAccountType;
+import com.android.contacts.common.model.account.PhoneAccountType;
+import com.android.contacts.common.model.account.SimAccountType;
 import com.android.contacts.common.util.EmptyService;
 import com.android.contacts.common.util.LocalizedNameResolver;
 import com.android.contacts.common.util.WeakAsyncTask;
@@ -144,9 +148,12 @@ public class CustomContactListFilterActivity extends Activity
                 if (account.dataSet != null) {
                     groupsUri.appendQueryParameter(Groups.DATA_SET, account.dataSet).build();
                 }
+                final Cursor cursor = resolver.query(groupsUri.build(), null, null, null, null);
+                if (cursor == null) {
+                    continue;
+                }
                 android.content.EntityIterator iterator =
-                        ContactsContract.Groups.newEntityIterator(resolver.query(
-                        groupsUri.build(), null, null, null, null));
+                        ContactsContract.Groups.newEntityIterator(cursor);
                 try {
                     boolean hasGroups = false;
 
@@ -344,9 +351,14 @@ public class CustomContactListFilterActivity extends Activity
                 }
             } else {
                 final Integer titleRes = getAsInteger(Groups.TITLE_RES);
+
                 if (titleRes != null) {
                     final String packageName = getAsString(Groups.RES_PACKAGE);
-                    return context.getPackageManager().getText(packageName, titleRes, null);
+                    if (!TextUtils.isEmpty(packageName)) {
+                        return context.getPackageManager().getText(packageName, titleRes, null);
+                    } else {
+                        return getAsString(Groups.TITLE);
+                    }
                 } else {
                     return getAsString(Groups.TITLE);
                 }
@@ -581,11 +593,17 @@ public class CustomContactListFilterActivity extends Activity
 
             final AccountType accountType = mAccountTypes.getAccountType(
                     account.mType, account.mDataSet);
-
-            text1.setText(account.mName);
-            text1.setVisibility(account.mName == null ? View.GONE : View.VISIBLE);
-            text2.setText(accountType.getDisplayLabel(mContext));
-
+            if (SimAccountType.ACCOUNT_TYPE.equals(account.mType)
+                    || PhoneAccountType.ACCOUNT_TYPE.equals(account.mType)) {
+                text1.setVisibility(View.VISIBLE);
+                text1.setText(accountType.getDisplayLabel(mContext, account.mName));
+                text2.setVisibility(View.GONE);
+            } else {
+                text1.setText(account.mName);
+                text1.setVisibility(account.mName == null ? View.GONE : View.VISIBLE);
+                text2.setText(accountType.getDisplayLabel(mContext, account.mName));
+                text2.setVisibility(View.VISIBLE);
+            }
             return convertView;
         }
 

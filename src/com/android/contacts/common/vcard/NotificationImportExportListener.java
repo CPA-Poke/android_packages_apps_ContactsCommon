@@ -26,11 +26,14 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Message;
+import android.provider.ContactsContract;
 import android.provider.ContactsContract.RawContacts;
 import android.widget.Toast;
 
 import com.android.contacts.common.R;
 import com.android.vcard.VCardEntry;
+
+import java.text.NumberFormat;
 
 public class NotificationImportExportListener implements VCardImportExportListener,
         Handler.Callback {
@@ -123,11 +126,12 @@ public class NotificationImportExportListener implements VCardImportExportListen
                             RawContacts.CONTENT_URI, rawContactId));
             intent = new Intent(Intent.ACTION_VIEW, contactUri);
         } else {
-            intent = null;
+            intent = new Intent(Intent.ACTION_VIEW);
+            intent.setType(ContactsContract.Contacts.CONTENT_TYPE);
         }
         final Notification notification =
                 NotificationImportExportListener.constructFinishNotification(mContext,
-                description, null, intent);
+                        VCardService.TYPE_IMPORT, description, null, intent);
         mNotificationManager.notify(NotificationImportExportListener.DEFAULT_NOTIFICATION_TAG,
                 jobId, notification);
     }
@@ -218,13 +222,15 @@ public class NotificationImportExportListener implements VCardImportExportListen
                 .setProgress(totalCount, currentCount, totalCount == - 1)
                 .setTicker(tickerText)
                 .setContentTitle(description)
+                .setColor(context.getResources().getColor(R.color.dialtacts_theme_color))
                 .setSmallIcon(type == VCardService.TYPE_IMPORT
                         ? android.R.drawable.stat_sys_download
                         : android.R.drawable.stat_sys_upload)
                 .setContentIntent(PendingIntent.getActivity(context, 0, intent, 0));
         if (totalCount > 0) {
-            builder.setContentText(context.getString(R.string.percentage,
-                    String.valueOf(currentCount * 100 / totalCount)));
+            String percentage =
+                    NumberFormat.getPercentInstance().format((double) currentCount / totalCount);
+            builder.setContentText(percentage);
         }
         return builder.getNotification();
     }
@@ -240,6 +246,7 @@ public class NotificationImportExportListener implements VCardImportExportListen
         return new Notification.Builder(context)
                 .setAutoCancel(true)
                 .setSmallIcon(android.R.drawable.stat_notify_error)
+                .setColor(context.getResources().getColor(R.color.dialtacts_theme_color))
                 .setContentTitle(description)
                 .setContentText(description)
                 .setContentIntent(PendingIntent.getActivity(context, 0, new Intent(), 0))
@@ -254,10 +261,13 @@ public class NotificationImportExportListener implements VCardImportExportListen
      * @param intent Intent to be launched when the Notification is clicked. Can be null.
      */
     /* package */ static Notification constructFinishNotification(
-            Context context, String title, String description, Intent intent) {
+            Context context, int type, String title, String description, Intent intent) {
         return new Notification.Builder(context)
                 .setAutoCancel(true)
-                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setSmallIcon(type == VCardService.TYPE_IMPORT
+                        ? android.R.drawable.stat_sys_download_done
+                        : android.R.drawable.stat_sys_upload_done)
+                .setColor(context.getResources().getColor(R.color.dialtacts_theme_color))
                 .setContentTitle(title)
                 .setContentText(description)
                 .setContentIntent(PendingIntent.getActivity(context, 0,
@@ -275,6 +285,7 @@ public class NotificationImportExportListener implements VCardImportExportListen
             Context context, String reason) {
         return new Notification.Builder(context)
                 .setAutoCancel(true)
+                .setColor(context.getResources().getColor(R.color.dialtacts_theme_color))
                 .setSmallIcon(android.R.drawable.stat_notify_error)
                 .setContentTitle(context.getString(R.string.vcard_import_failed))
                 .setContentText(reason)

@@ -19,10 +19,12 @@ package com.android.contacts.common;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.SystemProperties;
 import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.TelecomManager;
 import android.telecom.VideoProfile;
+import android.telephony.PhoneNumberUtils;
 
 import com.android.contacts.common.util.PhoneNumberHelper;
 import com.android.phone.common.PhoneConstants;
@@ -92,6 +94,27 @@ public class CallUtil {
     }
 
     /**
+     * get intent to start csvt.
+     */
+    public static Intent getCSVTCallIntent(String number) {
+        Intent intent = new Intent("com.borqs.videocall.action.LaunchVideoCallScreen");
+        intent.addCategory(Intent.CATEGORY_DEFAULT);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+        intent.putExtra("IsCallOrAnswer", true);
+        intent.putExtra("LaunchMode", 1);
+        intent.putExtra("call_number_key", number);
+        return intent;
+    }
+
+    /**
+     * if true, csvt is enabled.
+     */
+    public static boolean isCSVTEnabled() {
+        boolean CSVTSupported = SystemProperties.getBoolean("persist.radio.csvt.enabled", false);
+        return CSVTSupported;
+    }
+
+    /**
      * A variant of {@link #getCallIntent(String, String)} for starting a video call.
      */
     public static Intent getVideoCallIntent(String number, String callOrigin) {
@@ -118,6 +141,13 @@ public class CallUtil {
     }
 
     /**
+     * A variant of {@link #getCallIntent(android.net.Uri)} for calling Voicemail.
+     */
+    public static Intent getVoicemailIntent() {
+        return getCallIntent(Uri.fromParts(PhoneAccount.SCHEME_VOICEMAIL, "", null));
+    }
+
+    /**
      * A variant of {@link #getCallIntent(android.net.Uri)} but also accept a call
      * origin and {@code Account} and {@code VideoCallProfile} state.
      * For more information about call origin, see comments in Phone package (PhoneApp).
@@ -138,6 +168,46 @@ public class CallUtil {
 
     /**
      * Return Uri with an appropriate scheme, accepting both SIP and usual phone call
+     * Checks whether two phone numbers resolve to the same phone.
+     */
+    public static boolean phoneNumbersEqual(String number1, String number2) {
+        if (PhoneNumberUtils.isUriNumber(number1) || PhoneNumberUtils.isUriNumber(number2)) {
+            return sipAddressesEqual(number1, number2);
+        } else {
+            return PhoneNumberUtils.compare(number1, number2);
+        }
+    }
+
+    private static boolean sipAddressesEqual(String number1, String number2) {
+        if (number1 == null || number2 == null) return number1 == number2;
+
+        int index1 = number1.indexOf('@');
+        final String userinfo1;
+        final String rest1;
+        if (index1 != -1) {
+            userinfo1 = number1.substring(0, index1);
+            rest1 = number1.substring(index1);
+        } else {
+            userinfo1 = number1;
+            rest1 = "";
+        }
+
+        int index2 = number2.indexOf('@');
+        final String userinfo2;
+        final String rest2;
+        if (index2 != -1) {
+            userinfo2 = number2.substring(0, index2);
+            rest2 = number2.substring(index2);
+        } else {
+            userinfo2 = number2;
+            rest2 = "";
+        }
+
+        return userinfo1.equals(userinfo2) && rest1.equalsIgnoreCase(rest2);
+    }
+
+    /**
+     * Return Uri with an appropriate scheme, accepting Voicemail, SIP, and usual phone call
      * numbers.
      */
     public static Uri getCallUri(String number) {

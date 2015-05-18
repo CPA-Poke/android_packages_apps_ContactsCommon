@@ -17,6 +17,7 @@
 package com.android.contacts.common.list;
 
 import android.app.Activity;
+import android.app.Fragment;
 import android.app.LoaderManager;
 import android.app.LoaderManager.LoaderCallbacks;
 import android.content.BroadcastReceiver;
@@ -25,7 +26,6 @@ import android.content.CursorLoader;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.Loader;
-import android.content.res.Resources;
 import android.database.Cursor;
 import android.os.Bundle;
 import android.os.Handler;
@@ -47,12 +47,10 @@ import android.widget.AdapterView.OnItemClickListener;
 import android.widget.ListView;
 
 import com.android.common.widget.CompositeCursorAdapter.Partition;
-import com.android.contacts.common.R;
 import com.android.contacts.common.ContactPhotoManager;
 import com.android.contacts.common.preference.ContactsPreferences;
 import com.android.contacts.common.util.ContactListViewUtils;
 import com.android.contacts.common.util.SchedulingUtils;
-import com.android.dialerbind.analytics.AnalyticsFragment;
 import com.android.internal.telephony.TelephonyIntents;
 
 import java.util.Locale;
@@ -61,7 +59,7 @@ import java.util.Locale;
  * Common base class for various contact-related list fragments.
  */
 public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter>
-        extends AnalyticsFragment
+        extends Fragment
         implements OnItemClickListener, OnScrollListener, OnFocusChangeListener, OnTouchListener,
                 LoaderCallbacks<Cursor> {
     private static final String TAG = "ContactEntryListFragment";
@@ -76,6 +74,7 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
     private static final String KEY_QUICK_CONTACT_ENABLED = "quickContactEnabled";
     private static final String KEY_ADJUST_SELECTION_BOUNDS_ENABLED =
             "adjustSelectionBoundsEnabled";
+    private static final String KEY_QUICK_CALL_BUTTON_ENABLED = "quickCallButtonEnabled";
     private static final String KEY_INCLUDE_PROFILE = "includeProfile";
     private static final String KEY_SEARCH_MODE = "searchMode";
     private static final String KEY_VISIBLE_SCROLLBAR_ENABLED = "visibleScrollbarEnabled";
@@ -101,6 +100,7 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
     private boolean mPhotoLoaderEnabled;
     private boolean mQuickContactEnabled = true;
     private boolean mAdjustSelectionBoundsEnabled = true;
+    private boolean mQuickCallButtonEnabled = false;
     private boolean mIncludeProfile;
     private boolean mSearchMode;
     private boolean mVisibleScrollbarEnabled;
@@ -150,11 +150,16 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
     private Context mContext;
 
     private LoaderManager mLoaderManager;
+    private boolean mIgnoreSimStateChange;
 
     private BroadcastReceiver mSIMStateReceiver = new BroadcastReceiver() {
         @Override
-        public void onReceive(Context arg0, Intent arg1) {
-            reloadData();
+        public void onReceive(Context context, Intent intent) {
+            if (!mIgnoreSimStateChange) {
+                mForceLoad = loadPreferences();
+                reloadData();
+            }
+            mIgnoreSimStateChange = false;
         }
     };
 
@@ -242,6 +247,7 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
         outState.putBoolean(KEY_PHOTO_LOADER_ENABLED, mPhotoLoaderEnabled);
         outState.putBoolean(KEY_QUICK_CONTACT_ENABLED, mQuickContactEnabled);
         outState.putBoolean(KEY_ADJUST_SELECTION_BOUNDS_ENABLED, mAdjustSelectionBoundsEnabled);
+        outState.putBoolean(KEY_QUICK_CALL_BUTTON_ENABLED, mQuickCallButtonEnabled);
         outState.putBoolean(KEY_INCLUDE_PROFILE, mIncludeProfile);
         outState.putBoolean(KEY_SEARCH_MODE, mSearchMode);
         outState.putBoolean(KEY_VISIBLE_SCROLLBAR_ENABLED, mVisibleScrollbarEnabled);
@@ -265,13 +271,6 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
         mAdapter = createListAdapter();
         mContactsPrefs = new ContactsPreferences(mContext);
         restoreSavedState(savedState);
-
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED);
-        filter.addAction(TelephonyIntents.ACTION_SIM_STATE_CHANGED);
-        if (mContext != null) {
-            mContext.registerReceiver(mSIMStateReceiver, filter);
-        }
     }
 
     public void restoreSavedState(Bundle savedState) {
@@ -283,6 +282,7 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
         mPhotoLoaderEnabled = savedState.getBoolean(KEY_PHOTO_LOADER_ENABLED);
         mQuickContactEnabled = savedState.getBoolean(KEY_QUICK_CONTACT_ENABLED);
         mAdjustSelectionBoundsEnabled = savedState.getBoolean(KEY_ADJUST_SELECTION_BOUNDS_ENABLED);
+        mQuickCallButtonEnabled = savedState.getBoolean(KEY_QUICK_CALL_BUTTON_ENABLED);
         mIncludeProfile = savedState.getBoolean(KEY_INCLUDE_PROFILE);
         mSearchMode = savedState.getBoolean(KEY_SEARCH_MODE);
         mVisibleScrollbarEnabled = savedState.getBoolean(KEY_VISIBLE_SCROLLBAR_ENABLED);
@@ -308,6 +308,13 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
 
         mDirectoryListStatus = STATUS_NOT_LOADED;
         mLoadPriorityDirectoriesOnly = true;
+
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED);
+        filter.addAction(TelephonyIntents.ACTION_SIM_STATE_CHANGED);
+        // Make sure to not trigger a full reload by the sticky SIM state change
+        // broadcast delivery on registration
+        mIgnoreSimStateChange = mContext.registerReceiver(mSIMStateReceiver, filter) != null;
 
         startLoading();
     }
@@ -336,6 +343,7 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
 
         // Next time this method is called, we should start loading non-priority directories
         mLoadPriorityDirectoriesOnly = false;
+        mAdapter.notifyDataSetChanged();
     }
 
     @Override
@@ -395,6 +403,9 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
     protected void loadDirectoryPartition(int partitionIndex, DirectoryPartition partition) {
         Bundle args = new Bundle();
         args.putLong(DIRECTORY_ID_ARG_KEY, partition.getDirectoryId());
+        if (getLoaderManager().getLoader(partitionIndex) != null) {
+            getLoaderManager().destroyLoader(partitionIndex);
+        }
         getLoaderManager().restartLoader(partitionIndex, args, this);
     }
 
@@ -436,6 +447,11 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
     }
 
     public void onLoaderReset(Loader<Cursor> loader) {
+        if (loader.getId() >= 0) {
+            mAdapter.changeCursor(loader.getId(), null);
+        } else {
+            mAdapter.changeCursor(null);
+        }
     }
 
     protected void onPartitionLoaded(int partitionIndex, Cursor data) {
@@ -476,14 +492,7 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
         super.onStop();
         mContactsPrefs.unregisterChangeListener();
         mAdapter.clearPartitions();
-    }
-
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        if (mContext != null) {
-            mContext.unregisterReceiver(mSIMStateReceiver);
-        }
+        mContext.unregisterReceiver(mSIMStateReceiver);
     }
 
     protected void reloadData() {
@@ -578,6 +587,10 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
 
     public void setAdjustSelectionBoundsEnabled(boolean flag) {
         mAdjustSelectionBoundsEnabled = flag;
+    }
+
+    public void setQuickCallButtonEnabled(boolean flag) {
+        this.mQuickCallButtonEnabled = flag;
     }
 
     public void setIncludeProfile(boolean flag) {
@@ -802,6 +815,7 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
 
         mAdapter.setQuickContactEnabled(mQuickContactEnabled);
         mAdapter.setAdjustSelectionBoundsEnabled(mAdjustSelectionBoundsEnabled);
+        mAdapter.setQuickCallButtonEnabled(mQuickCallButtonEnabled);
         mAdapter.setIncludeProfile(mIncludeProfile);
         mAdapter.setQueryString(mQueryString);
         mAdapter.setDirectorySearchMode(mDirectorySearchMode);
@@ -898,8 +912,9 @@ public abstract class ContactEntryListFragment<T extends ContactEntryListAdapter
             new ContactsPreferences.ChangeListener() {
         @Override
         public void onChange() {
-            loadPreferences();
-            reloadData();
+            if(loadPreferences()) {
+                reloadData();
+            }
         }
     };
 

@@ -31,12 +31,14 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.util.SparseArray;
 
+import com.android.contacts.common.MoreContactUtils;
 import com.android.contacts.common.R;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -54,6 +56,10 @@ import java.util.concurrent.RejectedExecutionException;
 public class VCardService extends Service {
     private final static String LOG_TAG = "VCardService";
 
+    public final static int INTERNAL_PATH = 0;
+    public final static int EXTERNAL_PATH = 1;
+    public final static int INVALID_PATH = -1;
+    public final static String STORAGE_PATH = "storage";
     /* package */ final static boolean DEBUG = false;
 
     /* package */ static final int MSG_IMPORT_REQUEST = 1;
@@ -70,7 +76,8 @@ public class VCardService extends Service {
     /* package */ static final int TYPE_EXPORT = 2;
 
     /* package */ static final String CACHE_FILE_PREFIX = "import_tmp_";
-
+    private String selExport = "";
+    private int mStorage = INTERNAL_PATH;
 
     private class CustomMediaScannerConnectionClient implements MediaScannerConnectionClient {
         final MediaScannerConnection mConnection;
@@ -149,7 +156,16 @@ public class VCardService extends Service {
     }
 
     private void initExporterParams() {
-        mTargetDirectory = Environment.getExternalStorageDirectory();
+        if (mStorage == EXTERNAL_PATH) {
+            String targetDirectory = MoreContactUtils.getSDPath(this);
+            if (targetDirectory != null) {
+                mTargetDirectory = new File(targetDirectory);
+            } else {
+                mTargetDirectory = Environment.getExternalStorageDirectory();
+            }
+        } else {
+            mTargetDirectory = Environment.getExternalStorageDirectory();
+        }
         mFileNamePrefix = getString(R.string.config_export_file_prefix);
         mFileNameSuffix = getString(R.string.config_export_file_suffix);
         mFileNameExtension = getString(R.string.config_export_file_extension);
@@ -178,9 +194,11 @@ public class VCardService extends Service {
         if (intent != null && intent.getExtras() != null) {
             mCallingActivity = intent.getExtras().getString(
                     VCardCommonArguments.ARG_CALLING_ACTIVITY);
+            mStorage = intent.getExtras().getInt(STORAGE_PATH);
         } else {
             mCallingActivity = null;
         }
+        initExporterParams();
         return START_STICKY;
     }
 
@@ -231,7 +249,10 @@ public class VCardService extends Service {
 
     public synchronized void handleExportRequest(ExportRequest request,
             VCardImportExportListener listener) {
-        if (tryExecute(new ExportProcessor(this, request, mCurrentJobId, mCallingActivity))) {
+        ExportProcessor processor = new ExportProcessor(this, request, mCurrentJobId,
+                mCallingActivity);
+        processor.setSelExport(selExport);
+        if (tryExecute(processor)) {
             final String path = request.destUri.getEncodedPath();
             if (DEBUG) Log.d(LOG_TAG, "Reserve the path " + path);
             if (!mReservedDestination.add(path)) {
@@ -253,6 +274,10 @@ public class VCardService extends Service {
                 listener.onExportFailed(request);
             }
         }
+    }
+
+    public void setSelExport(String sel) {
+        selExport = sel;
     }
 
     /**
@@ -472,7 +497,8 @@ public class VCardService extends Service {
          * This method increments "index" part from 1 to maximum, and checks whether any file name
          * following naming rule is available. If there's no file named /mnt/sdcard/00001.vcf, the
          * name will be returned to a caller. If there are 00001.vcf 00002.vcf, 00003.vcf is
-         * returned.
+         * returned. We format these numbers in the US locale to ensure we they appear as
+         * english numerals.
          *
          * There may not be any appropriate file name. If there are 99999 vCard files in the
          * storage, for example, there's no appropriate name, so this method returns
@@ -495,7 +521,7 @@ public class VCardService extends Service {
 
         if (!ALLOW_LONG_FILE_NAME) {
             final String possibleBody =
-                    String.format(bodyFormat, mFileNamePrefix, 1, mFileNameSuffix);
+                    String.format(Locale.US, bodyFormat, mFileNamePrefix, 1, mFileNameSuffix);
             if (possibleBody.length() > 8 || mFileNameExtension.length() > 3) {
                 Log.e(LOG_TAG, "This code does not allow any long file name.");
                 mErrorReason = getString(R.string.fail_reason_too_long_filename,
@@ -507,7 +533,8 @@ public class VCardService extends Service {
 
         for (int i = mFileIndexMinimum; i <= mFileIndexMaximum; i++) {
             boolean numberIsAvailable = true;
-            final String body = String.format(bodyFormat, mFileNamePrefix, i, mFileNameSuffix);
+            final String body
+                    = String.format(Locale.US, bodyFormat, mFileNamePrefix, i, mFileNameSuffix);
             // Make sure that none of the extensions of mExtensionsToConsider matches. If this
             // number is free, we'll go ahead with mFileNameExtension (which is included in
             // mExtensionsToConsider)
